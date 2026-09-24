@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LangChain attack surface explorer</title>
+<meta name="description" content="An interactive map of where LangChain and LLM applications get attacked, mapped to the OWASP Top 10 for LLM Applications (2026).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EEF2F3; --panel:#FFFFFF; --ink:#17212B; --muted:#56636F; --line:#C5CFD6;
+  --untrusted:#B5179E; --untrusted-soft:#F6E1F2; --control:#0E7C6B; --control-soft:#DDF1EC;
+  --sans:"Schibsted Grotesk",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#10181F; --panel:#18232C; --ink:#E4EBEE; --muted:#95A3AE; --line:#2F3D48;
+    --untrusted:#E25BCB; --untrusted-soft:#3A1D36; --control:#42C7AA; --control-soft:#16342E;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:3px}
+code{font-family:var(--mono);font-size:.84em;background:var(--paper);border:1px solid var(--line);padding:.05em .35em;border-radius:3px;white-space:nowrap}
+:focus-visible{outline:3px solid var(--control);outline-offset:2px}
+.wrap{max-width:1240px;margin:0 auto;padding:0 24px}
+
+header.top{padding:56px 0 28px}
+header.top h1{font-size:clamp(2.1rem,5vw,3.6rem);line-height:1.02;font-weight:800;letter-spacing:-.025em;margin:0 0 18px;max-width:16ch}
+header.top p{max-width:64ch;margin:0;color:var(--muted);font-size:1.08rem}
+.legend{display:flex;flex-wrap:wrap;gap:22px;margin-top:22px;font-size:.92rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:14px;height:14px;border-radius:2px;border:2px solid var(--line);background:var(--panel)}
+.sw.u{border-color:var(--untrusted);background:var(--untrusted-soft)}
+.sw.x{border-style:dashed}
+
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 18px}
+.filters p{width:100%;margin:0 0 4px;font-weight:600;font-size:.95rem}
+.chip{font:inherit;font-size:.86rem;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:999px;cursor:pointer}
+.chip b{font-family:var(--mono);font-weight:500;font-size:.8rem;margin-right:6px;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.chip[aria-pressed="true"] b{color:var(--paper)}
+
+.explorer{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:28px;align-items:start}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto}
+.diagram svg{display:block;width:100%;min-width:640px;height:auto}
+.node{cursor:pointer}
+.node rect.box{fill:var(--panel);stroke:var(--line);stroke-width:1.5;transition:opacity .2s}
+.node.untrusted rect.box{fill:var(--untrusted-soft);stroke:var(--untrusted)}
+.node.cross rect.box{stroke-dasharray:5 4}
+.node text{fill:var(--ink);font-family:var(--sans);font-size:14px;font-weight:600;pointer-events:none}
+.node:hover rect.box{stroke:var(--ink)}
+.node:focus{outline:none}
+.node:focus-visible rect.box{stroke:var(--control);stroke-width:3}
+.node.selected rect.box{fill:var(--ink);stroke:var(--ink)}
+.node.selected text{fill:var(--paper)}
+.node.dim{opacity:.22}
+.node.hit rect.box{stroke:var(--control);stroke-width:3}
+.edge{stroke:var(--muted);stroke-width:1.6;fill:none}
+.edge.dim{opacity:.2}
+.zone{fill:var(--muted);font-family:var(--sans);font-size:12.5px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px 24px 20px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+.panel h2{font-size:1.55rem;line-height:1.15;margin:0 0 6px;letter-spacing:-.01em}
+.panel h3{font-size:.98rem;margin:20px 0 6px}
+.panel p{margin:0 0 10px}
+.panel ul{margin:0;padding-left:1.1em}
+.panel li{margin:0 0 6px}
+.lc{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}
+.tagrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{font-family:var(--mono);font-size:.76rem;border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted);background:none;cursor:pointer}
+.tag:hover{border-color:var(--ink);color:var(--ink)}
+.controls li::marker{color:var(--control)}
+.risks li::marker{color:var(--untrusted)}
+.incident{border-left:3px solid var(--untrusted);background:var(--untrusted-soft);padding:10px 12px;margin-top:16px;font-size:.93rem;border-radius:0 6px 6px 0}
+.ask{background:var(--control-soft);padding:10px 12px;border-radius:6px;font-size:.95rem}
+.ask li{margin:0 0 4px}
+.muted{color:var(--muted)}
+.complist{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.linkbtn{font:inherit;font-size:.9rem;background:none;border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--ink);cursor:pointer}
+.linkbtn:hover{border-color:var(--ink)}
+
+section.block{padding:72px 0 8px}
+section.block h2{font-size:clamp(1.6rem,3vw,2.2rem);letter-spacing:-.015em;margin:0 0 8px;line-height:1.1}
+section.block > .wrap > p.lead{color:var(--muted);max-width:64ch;margin:0 0 26px}
+
+.search{font:inherit;width:100%;max-width:420px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);margin-bottom:18px}
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:0 36px}
+.term{padding:16px 0;border-top:1px solid var(--line)}
+.term h3{margin:0 0 4px;font-size:1.02rem}
+.term p{margin:0 0 6px;font-size:.96rem}
+.term .sec{color:var(--muted);font-size:.92rem}
+.term .sec strong{color:var(--untrusted);font-weight:600}
+.empty{color:var(--muted);display:none}
+
+.check{columns:2 360px;column-gap:40px}
+.cgroup{break-inside:avoid;margin:0 0 24px}
+.cgroup h3{font-size:1.02rem;margin:0 0 8px}
+.cgroup label{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:.96rem;cursor:pointer}
+.cgroup input{margin-top:5px;width:17px;height:17px;accent-color:var(--control);flex:none}
+.bar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:0 0 26px}
+.meter{flex:1 1 220px;max-width:360px;height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--control);transition:width .25s}
+.btn{font:inherit;font-weight:600;font-size:.95rem;background:var(--ink);color:var(--paper);border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
+.status{font-size:.9rem;color:var(--control);min-height:1.2em}
+
+footer{padding:72px 0 48px;color:var(--muted);font-size:.9rem}
+footer .wrap{border-top:1px solid var(--line);padding-top:24px}
+footer p{max-width:72ch;margin:0 0 10px}
+
+@media (max-width:900px){
+  .explorer{grid-template-columns:1fr}
+  .panel{position:static;max-height:none}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <h1>Where LangChain apps get attacked</h1>
+    <p>Select any part of the pipeline to see what it does, how it fails, and what to ask the engineers who built it. Every component is mapped to the OWASP Top 10 for LLM Applications, 2026 edition.</p>
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw u"></i>Where outside text enters</span>
+      <span><i class="sw"></i>Application component</span>
+      <span><i class="sw x"></i>Cross-cutting concern</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="filters" id="filters" role="group" aria-labelledby="flabel">
+    <p id="flabel">Show components affected by an OWASP risk</p>
+  </div>
+
+  <div class="explorer">
+    <div class="diagram">
+      <svg id="map" viewBox="0 0 900 560" role="group" aria-label="LangChain application pipeline">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g id="edges" style="color:var(--muted)"></g>
+        <text class="zone" x="20" y="28">Request path</text>
+        <text class="zone" x="20" y="210">State, retrieval and actions</text>
+        <text class="zone" x="20" y="370">Ingestion</text>
+        <text class="zone" x="560" y="370">Cross-cutting</text>
+        <g id="nodes"></g>
+      </svg>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+</main>
+
+<section class="block" id="glossary">
+  <div class="wrap">
+    <h2>LangChain terms, read by a security reviewer</h2>
+    <p class="lead">What each piece is, in plain language, and the one thing to check first.</p>
+    <label for="q" class="muted" style="display:block;font-size:.9rem;margin-bottom:6px">Filter terms</label>
+    <input id="q" class="search" type="search" placeholder="Try retriever, agent, MCP">
+    <div class="gloss" id="gloss"></div>
+    <p class="empty" id="gempty">No terms match. Clear the filter to see all terms.</p>
+  </div>
+</section>
+
+<section class="block" id="checklist">
+  <div class="wrap">
+    <h2>Pre-launch review checklist</h2>
+    <p class="lead">A starting list for an LLM feature before it reaches customers. Tick what's in place, then copy the result into a ticket or review doc. Nothing is saved or sent anywhere.</p>
+    <div class="bar">
+      <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+      <span id="count" class="muted"></span>
+      <button class="btn" id="copy" type="button">Copy as Markdown</button>
+      <span class="status" id="status" role="status"></span>
+    </div>
+    <div class="check" id="check"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Sources: <a href="https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/">OWASP GenAI LLM Top 10 2026</a>, <a href="https://nvd.nist.gov/vuln/detail/CVE-2025-68664">NVD: CVE-2025-68664</a>, <a href="https://nvd.nist.gov/vuln/detail/CVE-2023-29374">NVD: CVE-2023-29374</a>, and the <a href="https://python.langchain.com/">LangChain documentation</a>. Class names reflect LangChain for Python and may change between releases.</p>
+    <p>Educational material, not a substitute for a security assessment. Not affiliated with LangChain or OWASP.</p>
+    <p>Maintained by <a href="https://www.linkedin.com/">Aishwarya Agarwal</a>. Corrections and additions welcome via pull request.</p>
+  </div>
+</footer>
+
+<script>
+const OWASP = {
+  LLM01:["Prompt injection","Text from users, documents or tools changes what the model does, overriding the developer's instructions."],
+  LLM02:["Sensitive information disclosure","Personal data, secrets or other customers' records show up in responses, logs or provider systems."],
+  LLM03:["Excessive agency","The model can take more actions, with more privilege, than the task needs, so manipulation turns into real damage."],
+  LLM04:["Supply chain","Vulnerable or malicious packages, integrations, models or prompts come in from outside your code."],
+  LLM05:["Data and model poisoning","Content used for retrieval or training is planted or altered to shape outputs."],
+  LLM06:["Unbounded consumption","Inputs or loops drive token spend, latency or rate usage past what the business can absorb."],
+  LLM07:["Misinformation","The system states wrong things confidently, and people or code act on them."],
+  LLM08:["Hidden context exposure","System prompts and other context never meant for the user can be read back. Renamed from system prompt leakage in 2026."],
+  LLM09:["Vector and embedding weaknesses","Retrieval stores leak across users or tenants, or can be manipulated to return chosen content."],
+  LLM10:["Improper output handling","Model output is passed to a browser, database, shell or parser without the checks you'd apply to user input."]
+};
+
+const N = [
+ {id:"input",x:90,y:70,name:"User input",u:1,
+  lc:["HumanMessage","request body","file upload"],
+  does:"Anything a person or calling system types or uploads. The first place attacker-controlled text enters.",
+  risks:["Direct prompt injection that overrides the developer's instructions.","Very long or repetitive inputs that run up token spend.","Pasted secrets and personal data that later land in logs or provider systems."],
+  controls:["Enforce length, rate and per-user budget limits before any model call.","Keep user text in the user message. Never concatenate it into the system prompt.","Redact obvious secrets and personal data before logging."],
+  ask:["Where exactly is user text inserted into the prompt?","What is the per-user token and request budget?"],
+  owasp:["LLM01","LLM06","LLM02"]},
+ {id:"prompt",x:270,y:70,name:"Prompt assembly",
+  lc:["ChatPromptTemplate","MessagesPlaceholder","system message"],
+  does:"Combines system instructions, history, retrieved documents and user input into the text the model actually sees.",
+  risks:["Content from several sources lands in one context window with roughly equal authority.","Credentials, internal URLs or business rules written into the system prompt can be read back.","Templates built from user-controlled strings, especially with the jinja2 format."],
+  controls:["Keep secrets and access decisions out of prompts. Enforce them in code.","Label and delimit untrusted sections. This reduces risk but does not prevent injection.","Keep template strings developer-owned and avoid jinja2 templates from any untrusted source."],
+  ask:["What would an attacker learn if the full system prompt leaked today?","Which sources feed this prompt, and which can an outsider write to?"],
+  owasp:["LLM01","LLM08","LLM02"]},
+ {id:"model",x:450,y:70,name:"Chat model",
+  lc:["init_chat_model","ChatOpenAI","ChatAnthropic"],
+  does:"Generates text or tool calls from the assembled prompt. It follows instructions it finds anywhere in its context.",
+  risks:["Injected text can steer it regardless of how the system prompt is worded.","Confident, wrong answers that users or code act on.","Data sent to the provider falls under that provider's retention terms.","Long contexts and automatic retries multiply cost."],
+  controls:["Design as if the model will sometimes follow attacker instructions, and limit what that can reach.","Set max tokens, timeouts and retry caps.","Check provider retention and zero-retention options before sending regulated data."],
+  ask:["If an attacker fully controlled the model for one request, what is the worst it could do?","Which data classes are sent to the model provider?"],
+  owasp:["LLM01","LLM02","LLM06","LLM07","LLM08"]},
+ {id:"parser",x:630,y:70,name:"Output parsing",
+  lc:["with_structured_output","PydanticOutputParser","StrOutputParser"],
+  does:"Turns model text into strings or structured objects that the application acts on.",
+  risks:["Valid JSON carrying attacker-chosen values, such as another user's ID or a privileged role.","Treating output as trusted because it passed schema validation.","Hallucinated fields passed silently downstream."],
+  controls:["Schema validation checks format, not permission. Re-check every value against the user's rights.","Use enums and allowlists for fields that trigger actions.","Fail closed when parsing fails."],
+  ask:["Which parsed fields drive a database write, a payment or a permission change?"],
+  owasp:["LLM10","LLM07"]},
+ {id:"sink",x:810,y:70,name:"Output sinks",
+  lc:["chat UI","SQL","code execution","email templates"],
+  does:"Wherever model output ends up: a browser, a query, an interpreter or a document.",
+  risks:["Cross-site scripting when model markdown or HTML is rendered unescaped.","SQL or command injection when output is executed.","Markdown image links that leak data through the URL when the image loads."],
+  controls:["Encode output for its destination, exactly as you would user input.","Disable or allowlist remote images and links in rendered responses.","Never run model-generated code outside a sandbox."],
+  incident:"CVE-2023-29374: LangChain's LLMMathChain, through version 0.0.131, let prompt injection reach Python's exec and run arbitrary code.",
+  ask:["Does the UI render model markdown, including images and links?","Is any model output ever executed?"],
+  owasp:["LLM10","LLM02"]},
+ {id:"memory",x:90,y:250,name:"Memory",
+  lc:["checkpointer","InMemorySaver","thread_id"],
+  does:"Stores earlier turns so the model keeps context across messages or sessions.",
+  risks:["One user's history returned to another when thread IDs are guessable or not tied to the logged-in user.","Injected instructions that persist across turns.","Sensitive data kept longer than your retention policy allows."],
+  controls:["Generate thread IDs server-side and bind them to the authenticated user and tenant.","Set retention and deletion for stored conversations.","Treat reloaded history as untrusted input."],
+  ask:["How is thread_id generated, and can a client supply its own?","How long is history kept, and can users delete it?"],
+  owasp:["LLM02","LLM01","LLM08"]},
+ {id:"retriever",x:270,y:250,name:"Retriever",
+  lc:["as_retriever()","MultiQueryRetriever","rerankers"],
+  does:"Picks which stored chunks get placed into the prompt for a given question.",
+  risks:["Returns documents the person asking is not allowed to read.","Retrieved chunks carry injected instructions straight into the prompt.","Weak retrieval produces confident answers from the wrong source."],
+  controls:["Filter by the user's permissions at query time, not after generation.","Show sources and citations to users.","Test retrieval quality with a fixed set of questions."],
+  ask:["Is authorization applied before retrieval, after it, or not at all?"],
+  owasp:["LLM09","LLM01","LLM02","LLM07"]},
+ {id:"agent",x:450,y:250,name:"Agent loop",
+  lc:["create_agent","LangGraph StateGraph","ToolNode","recursion_limit"],
+  does:"Lets the model choose a tool, read the result and choose again until it decides to stop.",
+  risks:["Actions the user never asked for, triggered by instructions hidden in retrieved content.","Loops that repeat tool calls until budgets or rate limits break.","One agent holding credentials for every tool."],
+  controls:["Set recursion limits and per-run cost caps.","Require human approval for irreversible actions, for example with LangGraph interrupts.","Split high-privilege actions into separate, narrowly scoped agents."],
+  ask:["Which tool calls can happen without a person seeing them first?","What stops a run from looping?"],
+  owasp:["LLM03","LLM01","LLM06"]},
+ {id:"tools",x:630,y:250,name:"Tools",
+  lc:["@tool","StructuredTool","langchain-mcp-adapters"],
+  does:"Functions the model can call: search, APIs, databases, file systems, code execution.",
+  risks:["Tools acting with the service's credentials rather than the end user's.","Broad tools such as run-any-SQL or fetch-any-URL, which enable data access and SSRF.","Tool results containing injected instructions that flow back into the model."],
+  controls:["Scope each tool to one operation and the calling user's permissions.","Validate tool arguments in code, not in the prompt.","Treat tool output as untrusted input."],
+  ask:["Whose identity does each tool act as?","Could a URL-fetching tool reach the cloud metadata endpoint or internal services?"],
+  owasp:["LLM03","LLM10","LLM01"]},
+ {id:"external",x:810,y:250,name:"External systems",
+  lc:["APIs","databases","email","ticketing"],
+  does:"The real systems an agent can change. Damage from a manipulated model shows up here.",
+  risks:["Records sent to an attacker-controlled address or webhook.","Destructive writes.","Actions that skip the app's normal authorization checks."],
+  controls:["Separate least-privilege service accounts per tool.","Egress allowlists for anything that sends data out.","Audit logs that tie every action to a user and a run."],
+  ask:["Can the agent send data outside the company, by email, webhook or arbitrary URL?"],
+  owasp:["LLM03","LLM02"]},
+ {id:"docs",x:90,y:410,name:"Documents & web",u:1,
+  lc:["uploads","web pages","tickets","emails","wikis"],
+  does:"Content pulled in to answer questions, often written by people outside your company.",
+  risks:["Indirect prompt injection hidden in pages, PDFs or emails, including invisible text.","Content planted where you know it will be retrieved.","Sensitive documents indexed without their access controls."],
+  controls:["Record the source and owner of everything ingested.","Restrict who can add content to the indexed corpus.","Scan for hidden text and instruction-like content before indexing."],
+  ask:["Who can write to the sources that get indexed?"],
+  owasp:["LLM01","LLM05"]},
+ {id:"loaders",x:270,y:410,name:"Loaders & splitters",
+  lc:["WebBaseLoader","PyPDFLoader","RecursiveCharacterTextSplitter"],
+  does:"Fetch and parse raw content, then cut it into chunks for embedding.",
+  risks:["URL-fetching loaders becoming an SSRF path into internal networks.","Vulnerabilities in third-party file parsers.","Access-control metadata dropped during chunking."],
+  controls:["Fetch through an egress-restricted proxy that blocks internal ranges.","Pin and scan parser dependencies.","Copy tenant and permission metadata onto every chunk."],
+  ask:["Is the source document's access list kept on each chunk?"],
+  owasp:["LLM04","LLM09","LLM01"]},
+ {id:"vector",x:450,y:410,name:"Vector store",
+  lc:["embeddings","PGVector","Chroma","FAISS"],
+  does:"Stores numeric representations of chunks so similar text can be found later.",
+  risks:["Several customers' data in one index without mandatory filtering.","Embeddings treated as harmless even though text can be partly reconstructed from them.","Loading pickle-based index files, such as FAISS.load_local with allow_dangerous_deserialization, from locations others can write to."],
+  controls:["Isolate tenants with separate collections or server-enforced metadata filters.","Classify the vector store at the same sensitivity as its source data.","Only load index files your own pipeline created."],
+  ask:["What stops tenant A's question from retrieving tenant B's chunks?"],
+  owasp:["LLM09","LLM02","LLM05"]},
+ {id:"serial",x:630,y:410,name:"Serialization",x2:1,
+  lc:["langchain_core.load","dumps / dumpd","loads / load"],
+  does:"Saves and restores LangChain objects, prompts and configuration.",
+  risks:["Deserializing data an attacker influenced, including fields from model output.","Secrets read from environment variables during deserialization.","Prompts or chains pulled from shared registries without review."],
+  controls:["Keep langchain-core patched.","Never deserialize untrusted data.","Leave secrets_from_env off unless there is a specific need."],
+  incident:"CVE-2025-68664 (CVSS 9.3): langchain-core's dumps() and dumpd() did not escape user-controlled dictionaries containing the internal \"lc\" key, so crafted data could be loaded as trusted objects and expose environment secrets. Fixed in 1.2.5 and 0.3.81. The JavaScript counterpart is CVE-2025-68665.",
+  ask:["Which langchain-core version is deployed?","Where does the app call load() or loads()?"],
+  owasp:["LLM04","LLM10"]},
+ {id:"tracing",x:810,y:410,name:"Tracing & logs",x2:1,
+  lc:["LangSmith","callbacks","OpenTelemetry"],
+  does:"Records prompts, outputs, tool calls and timings for debugging and evaluation.",
+  risks:["Full prompts and customer data shipped to a third-party observability service.","System prompts and secrets visible to anyone with trace access.","Traces kept beyond your retention policy."],
+  controls:["Mask sensitive inputs and outputs before traces leave your environment.","Restrict trace access the way you restrict production data.","Set trace retention to match policy."],
+  ask:["Who can see production traces, and what is in them?"],
+  owasp:["LLM02","LLM08"]},
+ {id:"supply",x:450,y:510,w:860,name:"Supply chain: packages, integrations, models, MCP servers",x2:1,
+  lc:["langchain","langchain-community","partner packages","MCP servers","model files"],
+  does:"Everything the app imports or downloads rather than writes itself.",
+  risks:["Vulnerable or typosquatted packages.","Community integrations that get less review than core packages.","Third-party MCP servers and model files run without vetting."],
+  controls:["Pin versions and commit lockfiles.","Run dependency scanning and keep an SBOM that includes AI components.","Review each integration and MCP server before adoption."],
+  ask:["How quickly would you learn about, and patch, a critical langchain-core CVE?"],
+  owasp:["LLM04","LLM05"]}
+];
+
+const E = [
+ ["input","prompt","M165,70 H193"],["prompt","model","M345,70 H373"],["model","parser","M525,70 H553"],["parser","sink","M705,70 H733"],
+ ["memory","prompt","M122,224 L238,98"],["retriever","prompt","M270,224 V98"],
+ ["model","agent","M450,98 V222",1],["agent","tools","M527,250 H553",1],["tools","external","M705,250 H733"],
+ ["docs","loaders","M165,410 H193"],["loaders","vector","M345,410 H373"],["vector","retriever","M416,384 L302,278"]
+];
+
+const byId = Object.fromEntries(N.map(n=>[n.id,n]));
+const svgNS = "http://www.w3.org/2000/svg";
+const nodesG = document.getElementById("nodes"), edgesG = document.getElementById("edges");
+const panel = document.getElementById("panel");
+let selected = null, filter = null;
+
+E.forEach(([a,b,d,bi])=>{
+  const p = document.createElementNS(svgNS,"path");
+  p.setAttribute("d",d); p.setAttribute("class","edge");
+  p.setAttribute("marker-end","url(#arr)"); if(bi) p.setAttribute("marker-start","url(#arr)");
+  p.dataset.a=a; p.dataset.b=b; edgesG.appendChild(p);
+});
+
+N.forEach(n=>{
+  const w=n.w||150, h=52;
+  const g=document.createElementNS(svgNS,"g");
+  g.setAttribute("class","node"+(n.u?" untrusted":"")+(n.x2?" cross":""));
+  g.setAttribute("tabindex","0"); g.setAttribute("role","button");
+  g.setAttribute("aria-label",n.name); g.dataset.id=n.id;
+  const r=document.createElementNS(svgNS,"rect");
+  r.setAttribute("class","box"); r.setAttribute("x",n.x-w/2); r.setAttribute("y",n.y-h/2);
+  r.setAttribute("width",w); r.setAttribute("height",h); r.setAttribute("rx",6);
+  const t=document.createElementNS(svgNS,"text");
+  t.setAttribute("x",n.x); t.setAttribute("y",n.y+5); t.setAttribute("text-anchor","middle");
+  t.textContent=n.name;
+  g.append(r,t); nodesG.appendChild(g);
+  g.addEventListener("click",()=>selectNode(n.id));
+  g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectNode(n.id);}});
+});
+
+const fwrap=document.getElementById("filters");
+const allChip=document.createElement("button");
+allChip.className="chip"; allChip.type="button"; allChip.textContent="All components";
+allChip.setAttribute("aria-pressed","true"); allChip.addEventListener("click",()=>setFilter(null));
+fwrap.appendChild(allChip);
+Object.entries(OWASP).forEach(([k,[name]])=>{
+  const b=document.createElement("button");
+  b.className="chip"; b.type="button"; b.dataset.k=k; b.setAttribute("aria-pressed","false");
+  b.innerHTML="<b>"+k+"</b>"+name; b.addEventListener("click",()=>setFilter(filter===k?null:k));
+  fwrap.appendChild(b);
+});
+
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const li=a=>a.map(x=>"<li>"+esc(x)+"</li>").join("");
+
+function paint(){
+  document.querySelectorAll(".node").forEach(g=>{
+    const n=byId[g.dataset.id];
+    g.classList.toggle("selected",selected===n.id);
+    g.classList.toggle("dim",!!filter&&!n.owasp.includes(filter));
+    g.classList.toggle("hit",!!filter&&n.owasp.includes(filter)&&selected!==n.id);
+  });
+  document.querySelectorAll(".edge").forEach(p=>{
+    const on=!filter||(byId[p.dataset.a].owasp.includes(filter)&&byId[p.dataset.b].owasp.includes(filter));
+    p.classList.toggle("dim",!on);
+  });
+  document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed",String((c.dataset.k||null)===filter)));
+}
+
+function selectNode(id){
+  selected=id; const n=byId[id];
+  panel.innerHTML=
+    "<h2>"+esc(n.name)+"</h2>"+
+    "<div class='lc'>"+n.lc.map(x=>"<code>"+esc(x)+"</code>").join("")+"</div>"+
+    "<p>"+esc(n.does)+"</p>"+
+    "<h3>How it goes wrong</h3><ul class='risks'>"+li(n.risks)+"</ul>"+
+    (n.incident?"<div class='incident'>"+esc(n.incident)+"</div>":"")+
+    "<h3>Controls that hold up</h3><ul class='controls'>"+li(n.controls)+"</ul>"+
+    "<h3>Ask the engineering team</h3><ul class='ask'>"+li(n.ask)+"</ul>"+
+    "<h3>OWASP LLM Top 10 (2026)</h3><div class='tagrow'>"+
+    n.owasp.map(k=>"<button type='button' class='tag' data-k='"+k+"' title='"+esc(OWASP[k][0])+"'>"+k+" "+esc(OWASP[k][0])+"</button>").join("")+"</div>";
+  panel.querySelectorAll(".tag").forEach(b=>b.addEventListener("click",()=>setFilter(b.dataset.k,true)));
+  paint();
+}
+
+function setFilter(k,keepNode){
+  filter=k;
+  if(!keepNode){
+    if(k){
+      selected=null;
+      const hits=N.filter(n=>n.owasp.includes(k));
+      panel.innerHTML="<h2><span class='muted' style='font-weight:500'>"+k+"</span><br>"+esc(OWASP[k][0])+"</h2>"+
+        "<p>"+esc(OWASP[k][1])+"</p><h3>Components involved ("+hits.length+")</h3>"+
+        "<div class='complist'>"+hits.map(n=>"<button type='button' class='linkbtn' data-id='"+n.id+"'>"+esc(n.name.split(":")[0])+"</button>").join("")+"</div>"+
+        "<p class='muted' style='margin-top:18px;font-size:.92rem'>Highlighted in the diagram. Select one to see specific failures and controls.</p>";
+      panel.querySelectorAll(".linkbtn").forEach(b=>b.addEventListener("click",()=>selectNode(b.dataset.id)));
+    } else if(!selected){ intro(); }
+  }
+  paint();
+}
+
+function intro(){
+  panel.innerHTML="<h2>Pick a component</h2>"+
+    "<p>The diagram follows a typical retrieval-augmented agent built with LangChain and LangGraph. Pink boxes are where text from outside your company enters. Everything downstream of them inherits that risk.</p>"+
+    "<p>Two starting points if you're short on time:</p>"+
+    "<div class='complist'><button type='button' class='linkbtn' data-id='tools'>Tools</button><button type='button' class='linkbtn' data-id='retriever'>Retriever</button></div>"+
+    "<p class='muted' style='margin-top:18px;font-size:.92rem'>Or filter by an OWASP risk above to see which parts of the app it touches.</p>";
+  panel.querySelectorAll(".linkbtn").forEach(b=>b.addEventListener("click",()=>selectNode(b.dataset.id)));
+}
+intro(); paint();
+
+/* Glossary */
+const G = [
+ ["Chain","A fixed sequence of steps, such as prompt, then model, then parser.","Every step trusts the output of the step before it. Find where untrusted text enters the sequence."],
+ ["LCEL and Runnables","LangChain Expression Language. Components share one interface and are joined with the | operator.","The pipe syntax hides data flow. Trace each input to its source during review."],
+ ["Prompt template","A reusable prompt with placeholders filled at runtime.","Check that templates are developer-owned and no secrets sit in the system text."],
+ ["Chat model","The wrapper around a hosted or local LLM.","Note which provider receives which data, and under what retention terms."],
+ ["Structured output","Asking the model to return data matching a schema.","A schema-valid answer can still carry values the user isn't allowed to use."],
+ ["Tool","A function the model can decide to call, with a name, description and argument schema.","Each tool is an API endpoint whose caller is a model that can be manipulated. Scope it accordingly."],
+ ["Agent","A loop where the model picks tools and reads results until it's done. In LangChain 1.x, built with create_agent on top of LangGraph.","Agency is the multiplier: injected text becomes actions. Limit tools, privileges and loop length."],
+ ["LangGraph","LangChain's framework for stateful, multi-step agent workflows as graphs.","Look for interrupts or approval steps before irreversible actions."],
+ ["Checkpointer","LangGraph's mechanism for saving agent state and conversation history per thread.","Thread IDs must be bound to the authenticated user, or histories can cross between users."],
+ ["Document loader","An integration that reads a source, such as a web page, PDF or Notion page, into documents.","Loaders that fetch URLs need the same SSRF protections as any server-side fetch."],
+ ["Text splitter","Cuts documents into chunks sized for embedding.","Permission metadata must survive the split."],
+ ["Embeddings","Numeric vectors representing text meaning.","Treat them as sensitive as the source text."],
+ ["Vector store","A database that finds chunks similar to a query.","Multi-tenant stores need isolation that the application can't forget to apply."],
+ ["Retriever","The component that returns relevant chunks for a question.","Authorization belongs here, before anything reaches the prompt."],
+ ["RAG","Retrieval-augmented generation: retrieve documents, then have the model answer using them.","RAG turns every indexed document into a possible source of instructions."],
+ ["LangSmith","LangChain's hosted tracing and evaluation platform.","Traces contain full prompts and outputs. Control access and masking."],
+ ["MCP","Model Context Protocol, a standard for exposing tools and data to models. LangChain connects to MCP servers through adapters.","A third-party MCP server is third-party code with access to your agent. Vet it like a dependency."],
+ ["langchain-community","The package holding community-maintained integrations.","Integrations here vary in review depth. Check each one you depend on."]
+];
+const gloss=document.getElementById("gloss");
+gloss.innerHTML=G.map(([t,d,s])=>"<div class='term' data-s='"+esc((t+" "+d+" "+s).toLowerCase())+"'><h3>"+esc(t)+"</h3><p>"+esc(d)+"</p><p class='sec'><strong>Check:</strong> "+esc(s)+"</p></div>").join("");
+document.getElementById("q").addEventListener("input",e=>{
+  const q=e.target.value.trim().toLowerCase(); let shown=0;
+  gloss.querySelectorAll(".term").forEach(el=>{const on=!q||el.dataset.s.includes(q); el.style.display=on?"":"none"; if(on) shown++;});
+  document.getElementById("gempty").style.display=shown?"none":"block";
+});
+
+/* Checklist */
+const C = [
+ ["Inputs and prompts",["User input is length-limited and rate-limited per user","No secrets, credentials or authorization logic in any prompt","User and retrieved text never inserted into the system message","Per-user and per-run token budgets enforced"]],
+ ["Agents and tools",["Every tool is scoped to one operation and the caller's permissions","Tool arguments are validated in code before execution","Irreversible actions require human approval","Recursion limit and cost cap set on every agent run","URL-fetching tools block internal networks and metadata endpoints"]],
+ ["Retrieval and data",["Retrieval filters by user and tenant permissions before generation","Permission metadata carried onto every chunk","Tenant isolation enforced server-side in the vector store","Only self-created index files are ever loaded"]],
+ ["Output",["Model output encoded for its destination (HTML, SQL, shell)","Remote images and links in rendered output disabled or allowlisted","Parsed fields that drive actions re-checked against permissions"]],
+ ["Operations",["langchain-core and integrations pinned and on patched versions","Dependency scanning covers AI packages and MCP servers","Traces masked, access-restricted and retention-limited","Prompt injection tested with direct and indirect cases before launch"]]
+];
+const check=document.getElementById("check"); let idx=0;
+check.innerHTML=C.map(([g,items])=>"<div class='cgroup'><h3>"+esc(g)+"</h3>"+items.map(i=>"<label><input type='checkbox' data-g='"+esc(g)+"' data-t='"+esc(i)+"' id='c"+(idx++)+"'><span>"+esc(i)+"</span></label>").join("")+"</div>").join("");
+const boxes=[...check.querySelectorAll("input")];
+function tally(){
+  const done=boxes.filter(b=>b.checked).length;
+  document.getElementById("count").textContent=done+" of "+boxes.length+" in place";
+  document.getElementById("meter").style.width=(done/boxes.length*100)+"%";
+}
+boxes.forEach(b=>b.addEventListener("change",tally)); tally();
+document.getElementById("copy").addEventListener("click",async()=>{
+  let md="## LLM feature security review\n";
+  C.forEach(([g,items])=>{md+="\n### "+g+"\n"; items.forEach(i=>{const b=boxes.find(x=>x.dataset.t===i); md+="- ["+(b.checked?"x":" ")+"] "+i+"\n";});});
+  md+="\nReference: OWASP Top 10 for LLM Applications 2026\n";
+  const st=document.getElementById("status");
+  try{ await navigator.clipboard.writeText(md); st.textContent="Copied to clipboard."; }
+  catch(e){
+    const ta=document.createElement("textarea"); ta.value=md; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); st.textContent="Copied to clipboard."; }
+    catch(_){ st.textContent="Copy blocked by the browser. Select the checklist text manually."; }
+    ta.remove();
+  }
+  setTimeout(()=>st.textContent="",3000);
+});
+</script>
+</body>
+</html>
