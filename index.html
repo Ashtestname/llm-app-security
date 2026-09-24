@@ -108,6 +108,11 @@ section.block > .wrap > p.lead{color:var(--muted);max-width:64ch;margin:0 0 26px
 .btn{font:inherit;font-weight:600;font-size:.95rem;background:var(--ink);color:var(--paper);border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
 .status{font-size:.9rem;color:var(--control);min-height:1.2em}
 
+.cta{margin-top:36px;display:flex;flex-wrap:wrap;gap:20px 40px;align-items:center;justify-content:space-between;border:2px solid var(--ink);border-radius:10px;padding:26px 28px}
+.cta > div{flex:1 1 420px;max-width:66ch}
+.cta h2{margin:0 0 6px;font-size:1.35rem;letter-spacing:-.01em}
+.cta p{margin:0;color:var(--muted)}
+.cta .btn{text-decoration:none;display:inline-block}
 footer{padding:72px 0 48px;color:var(--muted);font-size:.9rem}
 footer .wrap{border-top:1px solid var(--line);padding-top:24px}
 footer p{max-width:72ch;margin:0 0 10px}
@@ -155,6 +160,13 @@ footer p{max-width:72ch;margin:0 0 10px}
       </svg>
     </div>
     <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+  <div class="cta">
+    <div>
+      <h2>Shipping an LLM feature to enterprise customers?</h2>
+      <p>I run focused security reviews of LangChain and LangGraph applications: the questions on this page, answered against your actual code and architecture, with findings your engineers can fix and a summary you can share with customers' security teams.</p>
+    </div>
+    <a class="btn" href="mailto:aishwarya.agarwal248@gmail.com?subject=LLM%20app%20security%20review">Email me about a review</a>
   </div>
 </main>
 
